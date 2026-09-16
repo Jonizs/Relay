@@ -1,0 +1,163 @@
+import Phaser from 'phaser';
+import Peer from 'peerjs';
+import type { DataConnection } from 'peerjs';
+
+/** Everyone who opens the page joins this lobby: first in becomes host, the rest connect to it. */
+const LOBBY_ID = 'relay-2dpit-lobby-v1';
+const RETRY_MS = 1500;
+
+export interface PlayerState {
+  t: 'state';
+  id: string;
+  x: number;
+  y: number;
+  /** Facing: 1 right, -1 left. */
+  f: 1 | -1;
+  /** Weapon id. */
+  w: string;
+  /** Alpha (invulnerability fade). */
+  a: number;
+  /** Container angle (spins). */
+  r: number;
+  /** Weapon sprite pose. */
+  s: { x: number; y: number; ang: number };
+}
+
+export type NetMessage =
+  | PlayerState
+  | { t: 'hit'; id: string; e: number; d: number }
+  | { t: 'leave'; id: string };
+
+export type NetRole = 'offline' | 'connecting' | 'host' | 'client';
+
+/**
+ * Star-topology WebRTC lobby over PeerJS (public broker). The host relays every
+ * message to the other peers; clients only talk to the host. If the host drops,
+ * clients retry and one of them claims the lobby id.
+ *
+ * Events: 'message' (NetMessage), 'status' (role / peer count changed).
+ */
+export class Net extends Phaser.Events.EventEmitter {
+  readonly id = Math.random().toString(36).slice(2, 8);
+  role: NetRole = 'offline';
+
+  private peer: Peer | null = null;
+  private readonly conns = new Map<string, DataConnection>();
+  private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private stopped = false;
+
+  /** Number of players in the lobby including us (best effort). */
+  get playerCount(): number {
+    return 1 + this.conns.size;
+  }
+
+  start(): void {
+    this.stopped = false;
+    this.tryHost();
+  }
+
+  stop(): void {
+    this.stopped = true;
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.send({ t: 'leave', id: this.id });
+    this.teardown();
+    this.role = 'offline';
+    this.emit('status');
+  }
+
+  send(msg: NetMessage): void {
+    for (const c of this.conns.values()) {
+      if (c.open) c.send(msg);
+    }
+  }
+
+  // --- internals ------------------------------------------------------------
+
+  private setRole(role: NetRole): void {
+    this.role = role;
+    this.emit('status');
+  }
+
+  private tryHost(): void {
+    if (this.stopped) return;
+    this.teardown();
+    this.setRole('connecting');
+
+    const peer = new Peer(LOBBY_ID, { debug: 0 });
+    this.peer = peer;
+
+    peer.on('open', () => {
+      this.setRole('host');
+      peer.on('connection', (c) => this.accept(c));
+    });
+    peer.on('error', (err: Error & { type?: string }) => {
+      if (err.type === 'unavailable-id') {
+        // Someone already hosts: join them.
+        peer.destroy();
+        this.joinAsClient();
+      } else {
+        this.scheduleRetry();
+      }
+    });
+    peer.on('disconnected', () => this.scheduleRetry());
+  }
+
+  private joinAsClient(): void {
+    if (this.stopped) return;
+    this.teardown();
+    this.setRole('connecting');
+
+    const peer = new Peer({ debug: 0 });
+    this.peer = peer;
+
+    peer.on('open', () => {
+      const c = peer.connect(LOBBY_ID, { reliable: true });
+      this.accept(c);
+      c.on('open', () => this.setRole('client'));
+      c.on('close', () => this.scheduleRetry()); // host gone -> try to become host
+    });
+    peer.on('error', () => this.scheduleRetry());
+    peer.on('disconnected', () => this.scheduleRetry());
+  }
+
+  private accept(c: DataConnection): void {
+    this.conns.set(c.peer, c);
+    c.on('open', () => this.emit('status'));
+    c.on('data', (data) => this.onData(c, data as NetMessage));
+    c.on('close', () => {
+      this.conns.delete(c.peer);
+      this.emit('status');
+    });
+    c.on('error', () => {
+      this.conns.delete(c.peer);
+      this.emit('status');
+    });
+  }
+
+  private onData(from: DataConnection, msg: NetMessage): void {
+    if (!msg || typeof msg !== 'object' || typeof msg.t !== 'string') return;
+    // Host relays to everyone else.
+    if (this.role === 'host') {
+      for (const c of this.conns.values()) {
+        if (c !== from && c.open) c.send(msg);
+      }
+    }
+    this.emit('message', msg);
+  }
+
+  private scheduleRetry(): void {
+    if (this.stopped || this.retryTimer) return;
+    this.setRole('connecting');
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = null;
+      this.tryHost();
+    }, RETRY_MS);
+  }
+
+  private teardown(): void {
+    for (const c of this.conns.values()) c.close();
+    this.conns.clear();
+    this.peer?.destroy();
+    this.peer = null;
+  }
+}
