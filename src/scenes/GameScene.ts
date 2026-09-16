@@ -1,8 +1,10 @@
 import Phaser from 'phaser';
 import type { Ability } from '@/abilities/Ability';
 import { ABILITY_KEYS, COMBAT, SCENES, TEXTURES, WORLD_HEIGHT, WORLD_WIDTH } from '@/config/GameConfig';
-import { ENEMY_DAMAGED_LOCAL, ENEMY_DATA_KEY, Enemy } from '@/entities/Enemy';
-import { RemotePlayer } from '@/entities/RemotePlayer';
+import { ENEMY_DAMAGED_LOCAL, ENEMY_KILLED, Enemy } from '@/entities/Enemy';
+import { PLAYER_DAMAGED_LOCAL, RemotePlayer } from '@/entities/RemotePlayer';
+import { TARGET_DATA_KEY } from '@/entities/Target';
+import type { Target } from '@/entities/Target';
 import { Net } from '@/net/Net';
 import type { NetMessage } from '@/net/Net';
 import { Player } from '@/entities/Player';
@@ -20,6 +22,8 @@ export class GameScene extends Phaser.Scene {
   private cameraController!: CameraController;
   private net!: Net;
   private readonly remotes = new Map<string, RemotePlayer>();
+  /** Peer id of whoever last damaged us (kill credit). */
+  private lastAttacker = '';
   private nextNetSendAt = 0;
 
   constructor() {
@@ -39,7 +43,16 @@ export class GameScene extends Phaser.Scene {
       new Enemy(this, cx - 380, cy + 220, this.fx),
     ];
 
-    this.player = new Player(this, cx, cy, { enemies: this.enemies, fx: this.fx, projectiles: this.projectiles });
+    const remotes = this.remotes;
+    const dummies = this.enemies;
+    this.player = new Player(this, cx, cy, {
+      // Live view: dummies plus whoever is in the lobby right now.
+      get enemies(): Target[] {
+        return [...dummies, ...remotes.values()];
+      },
+      fx: this.fx,
+      projectiles: this.projectiles,
+    });
     this.registry.set('player', this.player);
 
     this.marker = this.add.image(0, 0, TEXTURES.marker).setVisible(false).setDepth(5);
@@ -53,7 +66,7 @@ export class GameScene extends Phaser.Scene {
 
   update(_time: number, delta: number): void {
     this.player.update(delta);
-    this.projectiles.update(delta, this.enemies);
+    this.projectiles.update(delta, this.player.world.enemies);
     this.cameraController.update(delta);
     this.updateNet();
   }
@@ -71,6 +84,12 @@ export class GameScene extends Phaser.Scene {
     this.events.on(ENEMY_DAMAGED_LOCAL, (enemy: Enemy, amount: number) => {
       const e = this.enemies.indexOf(enemy);
       if (e !== -1) this.net.send({ t: 'hit', id: this.net.id, e, d: amount });
+    });
+    this.events.on(PLAYER_DAMAGED_LOCAL, (victim: RemotePlayer, amount: number) => {
+      this.net.send({ t: 'pdmg', id: this.net.id, to: victim.peerId, d: amount });
+    });
+    this.player.on('died', () => {
+      this.net.send({ t: 'killed', id: this.net.id, by: this.lastAttacker });
     });
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.net.stop());
     window.addEventListener('beforeunload', () => this.net.stop());
@@ -102,7 +121,7 @@ export class GameScene extends Phaser.Scene {
         if (msg.id === this.net.id) return;
         let remote = this.remotes.get(msg.id);
         if (!remote) {
-          remote = new RemotePlayer(this, msg.id, msg.x, msg.y);
+          remote = new RemotePlayer(this, msg.id, msg.x, msg.y, this.fx);
           this.remotes.set(msg.id, remote);
           this.publishNetStatus();
         }
@@ -112,6 +131,17 @@ export class GameScene extends Phaser.Scene {
       case 'hit': {
         const enemy = this.enemies[msg.e];
         if (enemy) enemy.takeDamage(msg.d, true);
+        break;
+      }
+      case 'pdmg': {
+        if (msg.to !== this.net.id) return;
+        this.lastAttacker = msg.id;
+        this.player.takeDamage(msg.d, true);
+        break;
+      }
+      case 'killed': {
+        // We got the kill: same reward as killing a dummy.
+        if (msg.by === this.net.id && msg.id !== this.net.id) this.events.emit(ENEMY_KILLED, null);
         break;
       }
       case 'leave': {
@@ -214,10 +244,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   /** Closest living enemy within `maxDist` of a world point, for forgiving quick-casts. */
-  private nearestEnemyTo(x: number, y: number, maxDist: number): Enemy | null {
-    let best: Enemy | null = null;
+  private nearestEnemyTo(x: number, y: number, maxDist: number): Target | null {
+    let best: Target | null = null;
     let bestDist = maxDist;
-    for (const enemy of this.enemies) {
+    for (const enemy of this.player.world.enemies) {
       if (!enemy.alive) continue;
       const d = Phaser.Math.Distance.Between(x, y, enemy.x, enemy.y) - enemy.radius;
       if (d < bestDist) {
@@ -228,10 +258,10 @@ export class GameScene extends Phaser.Scene {
     return best;
   }
 
-  private enemyFrom(over: Phaser.GameObjects.GameObject[]): Enemy | null {
+  private enemyFrom(over: Phaser.GameObjects.GameObject[]): Target | null {
     for (const obj of over) {
-      const enemy = obj.getData(ENEMY_DATA_KEY) as Enemy | undefined;
-      if (enemy?.alive) return enemy;
+      const target = obj.getData(TARGET_DATA_KEY) as Target | undefined;
+      if (target?.alive) return target;
     }
     return null;
   }

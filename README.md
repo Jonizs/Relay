@@ -9,7 +9,8 @@ for desktop and deployed to **GitHub Pages** for the browser.
 https://jonizs.github.io/Relay/ — closed beta, a tester password is required
 (ask the maintainer). Everyone who opens the link lands in the same lobby:
 the first player hosts, later players join automatically (WebRTC via PeerJS,
-no server). You see other players move and fight; dummy damage is shared.
+no server). Players can fight each other: 1000 HP, respawn after 3 s; kills
+count like dummy kills. Dummy damage is shared too.
 
 ## Run
 

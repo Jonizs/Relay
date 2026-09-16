@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import type { Enemy } from '@/entities/Enemy';
+import type { Target } from '@/entities/Target';
 
 export interface ProjectileOptions {
   texture: string;
@@ -10,14 +10,14 @@ export interface ProjectileOptions {
   range: number;
   direction: number;
   /** Called for each enemy hit. Return true to consume the projectile. */
-  onHit: (enemy: Enemy) => boolean;
+  onHit: (enemy: Target) => boolean;
 }
 
 /** A projectile moving in a straight line; hit-tests enemies by distance each frame. */
 class Projectile {
   readonly sprite: Phaser.GameObjects.Image;
   private travelled = 0;
-  private readonly hit = new Set<Enemy>();
+  private readonly hit = new Set<Target>();
   done = false;
 
   constructor(
@@ -33,7 +33,7 @@ class Projectile {
       .setDepth(3);
   }
 
-  update(deltaMs: number, enemies: Enemy[]): void {
+  update(deltaMs: number, enemies: Target[]): void {
     const step = (this.opts.speed * deltaMs) / 1000;
     this.sprite.x += Math.cos(this.opts.direction) * step;
     this.sprite.y += Math.sin(this.opts.direction) * step;
@@ -69,7 +69,7 @@ export class ProjectileManager {
     this.list.push(new Projectile(this.scene, x, y, opts));
   }
 
-  update(deltaMs: number, enemies: Enemy[]): void {
+  update(deltaMs: number, enemies: Target[]): void {
     for (const p of this.list) p.update(deltaMs, enemies);
     for (let i = this.list.length - 1; i >= 0; i--) {
       if (this.list[i].done) this.list.splice(i, 1);

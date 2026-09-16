@@ -4,7 +4,10 @@ import type { DataConnection } from 'peerjs';
 
 /** Everyone who opens the page joins this lobby: first in becomes host, the rest connect to it. */
 const LOBBY_ID = 'relay-2dpit-lobby-v1';
-const RETRY_MS = 1500;
+const RETRY_MIN_MS = 2000;
+const RETRY_MAX_MS = 30000;
+/** Give up on a host that never answers (stale id on the broker) and retry hosting. */
+const CONNECT_TIMEOUT_MS = 6000;
 
 export interface PlayerState {
   t: 'state';
@@ -21,11 +24,18 @@ export interface PlayerState {
   r: number;
   /** Weapon sprite pose. */
   s: { x: number; y: number; ang: number };
+  hp: number;
+  /** Alive. */
+  al: boolean;
 }
 
 export type NetMessage =
   | PlayerState
   | { t: 'hit'; id: string; e: number; d: number }
+  /** Damage dealt by `id` to player `to`; the victim applies it. */
+  | { t: 'pdmg'; id: string; to: string; d: number }
+  /** Player `id` died; `by` gets kill credit. */
+  | { t: 'killed'; id: string; by: string }
   | { t: 'leave'; id: string };
 
 export type NetRole = 'offline' | 'connecting' | 'host' | 'client';
@@ -44,6 +54,7 @@ export class Net extends Phaser.Events.EventEmitter {
   private peer: Peer | null = null;
   private readonly conns = new Map<string, DataConnection>();
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private retryDelay = RETRY_MIN_MS;
   private stopped = false;
 
   /** Number of players in the lobby including us (best effort). */
@@ -87,6 +98,7 @@ export class Net extends Phaser.Events.EventEmitter {
     this.peer = peer;
 
     peer.on('open', () => {
+      this.retryDelay = RETRY_MIN_MS;
       this.setRole('host');
       peer.on('connection', (c) => this.accept(c));
     });
@@ -113,7 +125,14 @@ export class Net extends Phaser.Events.EventEmitter {
     peer.on('open', () => {
       const c = peer.connect(LOBBY_ID, { reliable: true });
       this.accept(c);
-      c.on('open', () => this.setRole('client'));
+      const timeout = setTimeout(() => {
+        if (!c.open) this.scheduleRetry();
+      }, CONNECT_TIMEOUT_MS);
+      c.on('open', () => {
+        clearTimeout(timeout);
+        this.retryDelay = RETRY_MIN_MS;
+        this.setRole('client');
+      });
       c.on('close', () => this.scheduleRetry()); // host gone -> try to become host
     });
     peer.on('error', () => this.scheduleRetry());
@@ -145,13 +164,16 @@ export class Net extends Phaser.Events.EventEmitter {
     this.emit('message', msg);
   }
 
+  /** Exponential backoff so a flaky broker is never hammered. */
   private scheduleRetry(): void {
     if (this.stopped || this.retryTimer) return;
     this.setRole('connecting');
+    const delay = this.retryDelay;
+    this.retryDelay = Math.min(RETRY_MAX_MS, this.retryDelay * 2);
     this.retryTimer = setTimeout(() => {
       this.retryTimer = null;
       this.tryHost();
-    }, RETRY_MS);
+    }, delay);
   }
 
   private teardown(): void {

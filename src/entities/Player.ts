@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import type { Ability } from '@/abilities/Ability';
 import { COMBAT, CROSSBOW, PLAYER, TEXTURES, WORLD_HEIGHT, WORLD_WIDTH } from '@/config/GameConfig';
 import { ENEMY_KILLED } from '@/entities/Enemy';
-import type { Enemy } from '@/entities/Enemy';
+import type { Target } from '@/entities/Target';
 import type { PlayerState } from '@/net/Net';
 import type { Fx } from '@/systems/Fx';
 import type { ProjectileManager } from '@/systems/Projectiles';
@@ -15,7 +15,7 @@ type Facing = 1 | -1;
 
 /** What the player needs to know about the world to fight in it. */
 export interface World {
-  enemies: Enemy[];
+  enemies: Target[];
   fx: Fx;
   projectiles: ProjectileManager;
 }
@@ -34,7 +34,7 @@ interface WeaponPose {
 }
 
 interface PendingCast {
-  enemy: Enemy;
+  enemy: Target;
   range: number;
   execute: () => void;
 }
@@ -58,11 +58,18 @@ export class Player extends Phaser.GameObjects.Container {
   private target: Phaser.Math.Vector2 | null = null;
   /** Attack-move destination: walk there, fighting anything acquired on the way. */
   private attackMove: Phaser.Math.Vector2 | null = null;
-  private attackTarget: Enemy | null = null;
+  private attackTarget: Target | null = null;
   private pendingCast: PendingCast | null = null;
 
   /** Q-hit stacks (0..COMBAT.stacks.max). */
   stacks = 0;
+  readonly maxHp: number = COMBAT.player.hp;
+  hp: number = COMBAT.player.hp;
+  alive = true;
+  /** Rough radius for other players' hit tests. */
+  readonly radius = 26;
+  private readonly hpBar: Phaser.GameObjects.Graphics;
+  private readonly spawn: { x: number; y: number };
   private invulnerableUntil = 0;
   private speedMods: { mult: number; until: number }[] = [];
   /** While set in the future, no ability can be cast (wind-ups). */
@@ -104,8 +111,11 @@ export class Player extends Phaser.GameObjects.Container {
     this.sword.setOrigin(0.5, 0.85);
     this.sword.setAngle(this.rest.angle);
 
-    this.add([this.bodySprite, this.sword]);
+    this.hpBar = scene.add.graphics();
+    this.add([this.bodySprite, this.sword, this.hpBar]);
     this.setDepth(2);
+    this.spawn = { x, y };
+    this.drawHpBar();
 
     scene.add.existing(this);
     scene.physics.add.existing(this);
@@ -225,13 +235,54 @@ export class Player extends Phaser.GameObjects.Container {
     });
   }
 
-  /** Damage entry point for enemies (none deal damage yet). Returns true if it landed. */
-  takeDamage(amount: number): boolean {
-    if (this.invulnerable) return false;
+  /** Damage entry point (other players, later enemies). Returns true if it landed. */
+  takeDamage(amount: number, _remote = false): boolean {
+    if (!this.alive || this.invulnerable) return false;
     const reduction = this.now < this.damageReduction.until ? this.damageReduction.pct : 0;
-    this.lastDamageTaken = amount * (1 - reduction);
-    // TODO: player HP
+    const final = Math.round(amount * (1 - reduction));
+    this.lastDamageTaken = final;
+    this.hp = Math.max(0, this.hp - final);
+    this.world.fx.damageNumber(this.x, this.y, final);
+    this.drawHpBar();
+    this.bodySprite.setTint(0xff6b6b);
+    this.scene.time.delayedCall(70, () => {
+      if (this.alive) this.bodySprite.clearTint();
+    });
+    if (this.hp === 0) this.die();
     return true;
+  }
+
+  private die(): void {
+    this.alive = false;
+    this.stop();
+    this.scene.tweens.killTweensOf(this);
+    this.setAlpha(0.3);
+    this.bodySprite.clearTint();
+    this.emit('died');
+    this.scene.time.delayedCall(COMBAT.player.respawnMs, () => this.respawn());
+  }
+
+  private respawn(): void {
+    this.hp = this.maxHp;
+    this.alive = true;
+    this.stacks = 0;
+    this.setPosition(this.spawn.x, this.spawn.y);
+    this.setAlpha(1);
+    this.drawHpBar();
+    this.world.fx.burst(this.x, this.y, 0xffe066);
+  }
+
+  private drawHpBar(): void {
+    const w = 52;
+    const h = 6;
+    const x = -w / 2;
+    const y = -this.bodySprite.height / 2 - 12;
+    const t = this.hp / this.maxHp;
+    this.hpBar.clear();
+    this.hpBar.fillStyle(0x000000, 0.7);
+    this.hpBar.fillRect(x - 1, y - 1, w + 2, h + 2);
+    this.hpBar.fillStyle(0x4a90e2, 1);
+    this.hpBar.fillRect(x, y, w * t, h);
   }
 
   // --- commands -------------------------------------------------------------
@@ -243,7 +294,7 @@ export class Player extends Phaser.GameObjects.Container {
   }
 
   /** Basic attack: chase the enemy and swing whenever in range. */
-  attackEnemy(enemy: Enemy): void {
+  attackEnemy(enemy: Target): void {
     this.clearCommands();
     this.attackTarget = enemy;
   }
@@ -255,7 +306,7 @@ export class Player extends Phaser.GameObjects.Container {
   }
 
   /** Walk toward `enemy` until within `range`, then run `execute` once. */
-  castWhenInRange(enemy: Enemy, range: number, execute: () => void): void {
+  castWhenInRange(enemy: Target, range: number, execute: () => void): void {
     this.clearCommands();
     this.pendingCast = { enemy, range, execute };
   }
@@ -523,6 +574,8 @@ export class Player extends Phaser.GameObjects.Container {
       a: +this.alpha.toFixed(2),
       r: Math.round(this.angle),
       s: { x: Math.round(this.sword.x), y: Math.round(this.sword.y), ang: Math.round(this.sword.angle) },
+      hp: this.hp,
+      al: this.alive,
     };
   }
 
@@ -584,7 +637,7 @@ export class Player extends Phaser.GameObjects.Container {
     const now = this.now;
     for (const ability of this.abilities) ability.update(now);
 
-    if (this.dashing) return;
+    if (!this.alive || this.dashing) return;
 
     if (this.attackMove) {
       this.updateAttackMove(deltaMs, now);
@@ -632,8 +685,8 @@ export class Player extends Phaser.GameObjects.Container {
     this.moveToward(dest.x, dest.y, deltaMs);
   }
 
-  private nearestEnemy(maxDist: number): Enemy | null {
-    let best: Enemy | null = null;
+  private nearestEnemy(maxDist: number): Target | null {
+    let best: Target | null = null;
     let bestDist = maxDist;
     for (const enemy of this.world.enemies) {
       if (!enemy.alive) continue;

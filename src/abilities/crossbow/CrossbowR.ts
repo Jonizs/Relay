@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import type { CastContext } from '@/abilities/Ability';
 import { MultiCastAbility } from '@/abilities/MultiCastAbility';
 import { CROSSBOW } from '@/config/GameConfig';
-import type { Enemy } from '@/entities/Enemy';
+import type { Target } from '@/entities/Target';
 import type { Player } from '@/entities/Player';
 import { project } from '@/systems/Geometry';
 
@@ -22,7 +22,7 @@ export class CrossbowR extends MultiCastAbility {
     const direction = Phaser.Math.Angle.Between(p.x, p.y, ctx.x, ctx.y);
     const dist = Phaser.Math.Clamp(Phaser.Math.Distance.Between(p.x, p.y, ctx.x, ctx.y), cfg.minDistance, cfg.distance);
     const to = project(p.x, p.y, direction, dist);
-    const hit = new Set<Enemy>();
+    const hit = new Set<Target>();
 
     p.faceToward(to.x);
     p.spin((dist / cfg.speed) * 1000, 2);

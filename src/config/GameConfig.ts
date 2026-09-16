@@ -43,6 +43,7 @@ export const COMBAT = {
   stacks: { max: 3, eInvulnMs: 500, invulnAlpha: 0.35 },
   /** Killing an enemy takes this much off every ability cooldown. */
   killCooldownRefundMs: 15000,
+  player: { hp: 1000, respawnMs: 3000 },
 } as const;
 
 /** Dual Crossbows weapon. */

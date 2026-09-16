@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { Ability } from '@/abilities/Ability';
 import type { CastContext } from '@/abilities/Ability';
 import { COMBAT } from '@/config/GameConfig';
-import type { Enemy } from '@/entities/Enemy';
+import type { Target } from '@/entities/Target';
 import type { Player } from '@/entities/Player';
 import { project } from '@/systems/Geometry';
 
@@ -35,7 +35,7 @@ export class EAbility extends Ability {
     return false;
   }
 
-  private execute(enemy: Enemy): void {
+  private execute(enemy: Target): void {
     const p = this.player;
     const cfg = COMBAT.e;
     const sx = p.x;

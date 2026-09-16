@@ -1,9 +1,9 @@
 import Phaser from 'phaser';
 import { COMBAT, TEXTURES } from '@/config/GameConfig';
 import type { Fx } from '@/systems/Fx';
+import { TARGET_DATA_KEY } from '@/entities/Target';
+import type { Target } from '@/entities/Target';
 
-/** Data key used to find the owning Enemy from a clicked child game object. */
-export const ENEMY_DATA_KEY = 'enemy';
 /** Scene event emitted (with the Enemy) when one dies. */
 export const ENEMY_KILLED = 'enemy-killed';
 /** Scene event (enemy, amount) for damage dealt by the LOCAL player - used to sync online. */
@@ -13,7 +13,7 @@ export const ENEMY_DAMAGED_LOCAL = 'enemy-damaged-local';
  * Practice dummy: has HP, shows a health bar, takes damage, and respawns after dying.
  * The body image is the interactive hit area; clicking it is how AA/E pick a target.
  */
-export class Enemy extends Phaser.GameObjects.Container {
+export class Enemy extends Phaser.GameObjects.Container implements Target {
   readonly maxHp: number = COMBAT.dummy.hp;
   hp: number = COMBAT.dummy.hp;
   alive = true;
@@ -30,7 +30,7 @@ export class Enemy extends Phaser.GameObjects.Container {
     super(scene, x, y);
 
     this.bodySprite = scene.add.image(0, 0, TEXTURES.dummy).setInteractive({ useHandCursor: true });
-    this.bodySprite.setData(ENEMY_DATA_KEY, this);
+    this.bodySprite.setData(TARGET_DATA_KEY, this);
 
     this.hpBar = scene.add.graphics();
     this.add([this.bodySprite, this.hpBar]);

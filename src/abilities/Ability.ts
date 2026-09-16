@@ -1,4 +1,4 @@
-import type { Enemy } from '@/entities/Enemy';
+import type { Target } from '@/entities/Target';
 import type { Player } from '@/entities/Player';
 import { Cooldown } from '@/systems/Cooldown';
 import { DEV_COOLDOWN_RESET_MS, settings } from '@/systems/Settings';
@@ -7,8 +7,8 @@ export interface CastContext {
   /** Cursor position in world space. */
   x: number;
   y: number;
-  /** Enemy under (or nearest to) the cursor, if any. */
-  enemy: Enemy | null;
+  /** Target under (or nearest to) the cursor, if any. */
+  enemy: Target | null;
   now: number;
 }
 
@@ -53,7 +53,7 @@ export abstract class Ability {
 
   /** Attempts the cast. Returns true if the ability fired. */
   tryCast(ctx: CastContext): boolean {
-    if (this.player.castLocked) return false;
+    if (!this.player.alive || this.player.castLocked) return false;
     if ((this.player.dashing && !this.castableWhileBusy) || !this.isReady(ctx.now)) return false;
     const fired = this.cast(ctx);
     if (fired) {
