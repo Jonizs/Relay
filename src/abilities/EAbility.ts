@@ -59,6 +59,7 @@ export class EAbility extends Ability {
     p.faceToward(to.x);
     p.pointSword(direction);
     const trail = p.world.fx.trail(0xdfe6ee, 14, 240);
+    p.netTrail = 0xdfe6ee;
 
     p.dash(
       to.x,
@@ -69,6 +70,7 @@ export class EAbility extends Ability {
         }
         p.restSword();
         trail.end();
+        p.netTrail = 0;
       },
       () => {
         const tip = p.swordTip();

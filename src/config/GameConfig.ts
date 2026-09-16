@@ -40,7 +40,7 @@ export const COMBAT = {
   r: { damage: 100, distance: 350, minDistance: TILE_SIZE * 2, width: 90, activations: 3, windowMs: 10000, cooldown: 40000 },
   dummy: { hp: 1000, respawnMs: 2000 },
   /** Q hits build stacks; at `max`, E refunds its cooldown. E also grants brief invulnerability. */
-  stacks: { max: 3, eInvulnMs: 500, invulnAlpha: 0.35 },
+  stacks: { max: 3, eInvulnMs: 500, invulnAlpha: 0.2 },
   /** Killing an enemy takes this much off every ability cooldown. */
   killCooldownRefundMs: 15000,
   player: { hp: 1000, respawnMs: 3000 },

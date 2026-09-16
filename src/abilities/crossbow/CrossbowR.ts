@@ -27,11 +27,15 @@ export class CrossbowR extends MultiCastAbility {
     p.faceToward(to.x);
     p.spin((dist / cfg.speed) * 1000, 2);
     const ring = p.world.fx.spinRing(() => ({ x: p.x, y: p.y }), cfg.radius);
+    p.netSpin = cfg.radius;
 
     p.dash(
       to.x,
       to.y,
-      () => ring.end(),
+      () => {
+        ring.end();
+        p.netSpin = 0;
+      },
       () => {
         for (const enemy of p.world.enemies) {
           if (!enemy.alive || hit.has(enemy)) continue;

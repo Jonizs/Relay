@@ -27,10 +27,27 @@ export interface PlayerState {
   hp: number;
   /** Alive. */
   al: boolean;
+  /** Sword-tip trail colour while an ability is drawing one (0 = none). */
+  tr: number;
+  /** Afterimages while dashing (W). */
+  gh: boolean;
+  /** Shield ring radius (crossbow E block), 0 = none. */
+  sh: number;
+  /** Spin ring radius (crossbow R), 0 = none. */
+  sp: number;
+}
+
+/** One-shot visual effect replicated to other players. */
+export interface FxMessage {
+  t: 'fx';
+  id: string;
+  k: 'sweep' | 'streak' | 'impact' | 'burst';
+  a: number[];
 }
 
 export type NetMessage =
   | PlayerState
+  | FxMessage
   | { t: 'hit'; id: string; e: number; d: number }
   /** Damage dealt by `id` to player `to`; the victim applies it. */
   | { t: 'pdmg'; id: string; to: string; d: number }
@@ -123,7 +140,7 @@ export class Net extends Phaser.Events.EventEmitter {
     this.peer = peer;
 
     peer.on('open', () => {
-      const c = peer.connect(LOBBY_ID, { reliable: true });
+      const c = peer.connect(LOBBY_ID, { reliable: true, serialization: 'json' });
       this.accept(c);
       const timeout = setTimeout(() => {
         if (!c.open) this.scheduleRetry();

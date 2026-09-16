@@ -24,7 +24,7 @@ export class GameScene extends Phaser.Scene {
   private readonly remotes = new Map<string, RemotePlayer>();
   /** Peer id of whoever last damaged us (kill credit). */
   private lastAttacker = '';
-  private nextNetSendAt = 0;
+  private netTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
     super(SCENES.game);
@@ -80,6 +80,13 @@ export class GameScene extends Phaser.Scene {
     this.net.on('status', () => this.publishNetStatus());
     this.net.start();
 
+    // Broadcast our state on a timer (not the render loop) so a backgrounded tab
+    // keeps sending at whatever rate the browser allows instead of freezing.
+    this.netTimer = setInterval(() => {
+      if (this.net.role === 'host' || this.net.role === 'client') this.net.send(this.player.netState(this.net.id));
+    }, 50);
+    this.fx.broadcast = (k, a) => this.net.send({ t: 'fx', id: this.net.id, k, a });
+
     // Damage we deal is broadcast so everyone's dummies stay roughly in sync.
     this.events.on(ENEMY_DAMAGED_LOCAL, (enemy: Enemy, amount: number) => {
       const e = this.enemies.indexOf(enemy);
@@ -91,18 +98,17 @@ export class GameScene extends Phaser.Scene {
     this.player.on('died', () => {
       this.net.send({ t: 'killed', id: this.net.id, by: this.lastAttacker });
     });
-    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.net.stop());
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      if (this.netTimer) clearInterval(this.netTimer);
+      this.net.stop();
+    });
     window.addEventListener('beforeunload', () => this.net.stop());
   }
 
   private updateNet(): void {
     const now = this.time.now;
-    if (now >= this.nextNetSendAt && this.net.role !== 'offline') {
-      this.nextNetSendAt = now + 66; // ~15 Hz
-      this.net.send(this.player.netState(this.net.id));
-    }
     for (const [id, remote] of this.remotes) {
-      remote.update();
+      remote.update(now);
       if (now - remote.lastSeen > 5000) {
         remote.destroy();
         this.remotes.delete(id);
@@ -126,6 +132,10 @@ export class GameScene extends Phaser.Scene {
           this.publishNetStatus();
         }
         remote.applyState(msg, this.time.now);
+        break;
+      }
+      case 'fx': {
+        if (msg.id !== this.net.id) this.fx.replay(msg.k, msg.a);
         break;
       }
       case 'hit': {

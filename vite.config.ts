@@ -12,6 +12,8 @@ export default defineConfig({
   server: {
     port: 5173,
     open: false,
+    // Quick tunnels (cloudflared) get a random *.trycloudflare.com host each run.
+    allowedHosts: ['.trycloudflare.com'],
   },
   build: {
     target: 'es2022',

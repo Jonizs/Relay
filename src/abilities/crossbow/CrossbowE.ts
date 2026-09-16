@@ -35,6 +35,7 @@ export class CrossbowE extends Ability {
     this.slowMod = p.addSpeedMod(cfg.blockSlow, cfg.blockMs);
     this.shield?.end();
     this.shield = p.world.fx.shield(() => ({ x: p.x, y: p.y }), 40, 60000);
+    p.netShield = 40;
 
     this.cooldown.start(ctx.now);
     return true;
@@ -50,6 +51,7 @@ export class CrossbowE extends Ability {
   private breakShield(): void {
     this.shield?.end();
     this.shield = null;
+    this.player.netShield = 0;
   }
 
   override update(now: number): void {

@@ -59,7 +59,41 @@ export class Trail {
  * Everything here is fire-and-forget and cleans itself up.
  */
 export class Fx {
+  /** Set by the scene to replicate one-shot effects to other players. */
+  broadcast: ((kind: 'sweep' | 'streak' | 'impact' | 'burst', args: number[]) => void) | null = null;
+  /** True while replaying a remote effect (so it isn't re-broadcast). */
+  private replaying = false;
+
   constructor(private readonly scene: Phaser.Scene) {}
+
+  /** Play a one-shot effect received from another player. */
+  replay(kind: 'sweep' | 'streak' | 'impact' | 'burst', a: number[]): void {
+    this.replaying = true;
+    try {
+      switch (kind) {
+        case 'sweep': {
+          const origin = { x: a[0], y: a[1] };
+          this.sweepTrail(() => origin, a[2], a[3], a[4], a[5], a[6]);
+          break;
+        }
+        case 'streak':
+          this.dashStreak(a[0], a[1], a[2], a[3]);
+          break;
+        case 'impact':
+          this.impact(a[0], a[1], a[2], a[3]);
+          break;
+        case 'burst':
+          this.burst(a[0], a[1], a[2]);
+          break;
+      }
+    } finally {
+      this.replaying = false;
+    }
+  }
+
+  private share(kind: 'sweep' | 'streak' | 'impact' | 'burst', args: number[]): void {
+    if (!this.replaying) this.broadcast?.(kind, args);
+  }
 
   /** Cone from (x, y) facing `direction` (radians). */
   cone(x: number, y: number, direction: number, halfAngle: number, range: number): void {
@@ -102,6 +136,10 @@ export class Fx {
     growMs: number,
     color = 0xffffff,
   ): void {
+    {
+      const o = origin();
+      this.share('sweep', [o.x, o.y, radius, start, sweep, growMs, color]);
+    }
     const g = this.scene.add.graphics().setDepth(DEPTH + 2);
     const band = 18;
     const segments = 48;
@@ -176,6 +214,7 @@ export class Fx {
 
   /** Speed streaks along a dash path. */
   dashStreak(ax: number, ay: number, bx: number, by: number): void {
+    this.share('streak', [ax, ay, bx, by]);
     const angle = Math.atan2(by - ay, bx - ax);
     const nx = Math.cos(angle + Math.PI / 2);
     const ny = Math.sin(angle + Math.PI / 2);
@@ -274,6 +313,7 @@ export class Fx {
 
   /** Ground impact: a bright disc that pops and fades. */
   impact(x: number, y: number, radius: number, color = 0xffe066): void {
+    this.share('impact', [x, y, radius, color]);
     const g = this.scene.add.graphics().setDepth(DEPTH + 1);
     const state = { t: 0 };
     this.scene.tweens.add({
@@ -305,6 +345,7 @@ export class Fx {
 
   /** Expanding ring pop (buff activation). */
   burst(x: number, y: number, color: number): void {
+    this.share('burst', [x, y, color]);
     const g = this.scene.add.graphics().setDepth(DEPTH + 1);
     const state = { r: 10 };
     this.scene.tweens.add({

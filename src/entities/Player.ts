@@ -74,6 +74,11 @@ export class Player extends Phaser.GameObjects.Container {
   private speedMods: { mult: number; until: number }[] = [];
   /** While set in the future, no ability can be cast (wind-ups). */
   private castLockUntil = 0;
+  /** Replication hints for other players' clients (set by abilities). */
+  netTrail = 0;
+  netGhost = false;
+  netShield = 0;
+  netSpin = 0;
   private damageReduction = { pct: 0, until: 0 };
   /** Most recent post-reduction hit (until there's player HP to apply it to). */
   lastDamageTaken = 0;
@@ -571,11 +576,15 @@ export class Player extends Phaser.GameObjects.Container {
       y: Math.round(this.y),
       f: this.facing,
       w: this.weapon.id,
-      a: +this.alpha.toFixed(2),
+      a: this.invulnerable ? 0 : +this.alpha.toFixed(2),
       r: Math.round(this.angle),
       s: { x: Math.round(this.sword.x), y: Math.round(this.sword.y), ang: Math.round(this.sword.angle) },
       hp: this.hp,
       al: this.alive,
+      tr: this.netTrail,
+      gh: this.netGhost,
+      sh: this.netShield,
+      sp: this.netSpin,
     };
   }
 

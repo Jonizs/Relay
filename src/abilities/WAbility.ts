@@ -23,10 +23,14 @@ export class WAbility extends Ability {
 
     // Afterimages every few ms along the way.
     let lastGhost = 0;
+    p.netGhost = true;
     p.dash(
       to.x,
       to.y,
-      () => p.unsheatheSword(),
+      () => {
+        p.unsheatheSword();
+        p.netGhost = false;
+      },
       () => {
         if (p.now - lastGhost >= 28) {
           lastGhost = p.now;

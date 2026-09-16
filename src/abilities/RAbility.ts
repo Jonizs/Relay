@@ -35,12 +35,14 @@ export class RAbility extends MultiCastAbility {
     p.pointSword(direction, -90, 40);
 
     const trail = p.world.fx.trail(0xff3b3b, 18, 280);
+    p.netTrail = 0xff3b3b;
     p.dash(
       to.x,
       to.y,
       () => {
         p.restSword();
         trail.end();
+        p.netTrail = 0;
       },
       () => {
         const tip = p.swordTip();
