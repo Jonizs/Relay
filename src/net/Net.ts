@@ -9,6 +9,23 @@ const RETRY_MAX_MS = 30000;
 /** Give up on a host that never answers (stale id on the broker) and retry hosting. */
 const CONNECT_TIMEOUT_MS = 6000;
 
+/**
+ * Default PeerJS config only ships STUN, so any NAT stricter than "easy" (common on
+ * mobile/CGNAT/hotel-hotspot connections) can never open a direct WebRTC path. Add a
+ * free TURN relay as fallback so those peers can still connect (relayed instead of direct).
+ */
+const ICE_SERVERS: RTCIceServer[] = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+  {
+    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+    username: 'openrelayproject',
+    credential: 'openrelayproject',
+  },
+];
+const PEER_OPTIONS = { debug: 0 as const, config: { iceServers: ICE_SERVERS } };
+
 export interface PlayerState {
   t: 'state';
   id: string;
@@ -111,7 +128,7 @@ export class Net extends Phaser.Events.EventEmitter {
     this.teardown();
     this.setRole('connecting');
 
-    const peer = new Peer(LOBBY_ID, { debug: 0 });
+    const peer = new Peer(LOBBY_ID, PEER_OPTIONS);
     this.peer = peer;
 
     peer.on('open', () => {
@@ -136,7 +153,7 @@ export class Net extends Phaser.Events.EventEmitter {
     this.teardown();
     this.setRole('connecting');
 
-    const peer = new Peer({ debug: 0 });
+    const peer = new Peer(PEER_OPTIONS);
     this.peer = peer;
 
     peer.on('open', () => {
