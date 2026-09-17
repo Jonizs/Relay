@@ -5,6 +5,7 @@ import { GameScene } from '@/scenes/GameScene';
 import { UIScene } from '@/scenes/UIScene';
 import { SettingsScene } from '@/scenes/SettingsScene';
 import { WeaponsScene } from '@/scenes/WeaponsScene';
+import { keepRunningInBackground } from '@/systems/BackgroundTicker';
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
@@ -31,6 +32,7 @@ const config: Phaser.Types.Core.GameConfig = {
 };
 
 const game = new Phaser.Game(config);
+keepRunningInBackground(game);
 
 // Expose for console debugging during development only.
 if (import.meta.env.DEV) {
